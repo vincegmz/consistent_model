@@ -20,7 +20,7 @@ from cm.script_util import (
 )
 from cm.random_util import get_generator
 from cm.karras_diffusion import karras_sample
-
+from PIL import Image
 
 def main():
     args = create_argparser().parse_args()
@@ -86,6 +86,10 @@ def main():
         sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
         sample = sample.permute(0, 2, 3, 1)
         sample = sample.contiguous()
+        
+        for index,img in enumerate(all_images):
+            image = Image.fromarray(img.squeeze(0))
+            image.save(f'sample_{index}.png')
 
         gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
         dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
