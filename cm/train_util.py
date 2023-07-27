@@ -1,7 +1,7 @@
 import copy
 import functools
 import os
-
+import sys
 import blobfile as bf
 import torch as th
 import torch.distributed as dist
@@ -166,6 +166,7 @@ class TrainLoop:
             self.run_step(batch, cond)
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
+            # print(self.step)
             if self.step % self.save_interval == 0:
                 self.save()
                 # Run for a finite amount of time in integration tests.
@@ -215,9 +216,16 @@ class TrainLoop:
                 )
 
             loss = (losses["loss"] * weights).mean()
+            if self.step % self.log_interval ==0:
+                frac_done = (self.step + self.resume_step) / self.lr_anneal_steps
+                print(f'Steps done:{self.step},frac done:{frac_done}')
+            if loss.item() > 100:
+                print(self.step,loss.item())
+                sys.exit('Loss explodes')
             log_loss_dict(
                 self.diffusion, t, {k: v * weights for k, v in losses.items()}
             )
+
             self.mp_trainer.backward(loss)
 
     def _update_ema(self):

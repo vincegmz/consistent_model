@@ -61,7 +61,7 @@ def main():
         model_kwargs = {}
         if args.class_cond:
             classes = th.randint(
-                low=0, high=NUM_CLASSES, size=(args.batch_size,), device=dist_util.dev()
+                low=2, high=3, size=(args.batch_size,), device=dist_util.dev()
             )
             model_kwargs["y"] = classes
 
@@ -89,7 +89,7 @@ def main():
         
         for index,img in enumerate(all_images):
             image = Image.fromarray(img.squeeze(0))
-            image.save(f'sample_{index}.png')
+            image.save(f'sample_{classes.item()}.png')
 
         gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
         dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
