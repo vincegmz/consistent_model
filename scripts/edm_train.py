@@ -85,7 +85,8 @@ def create_argparser():
         resume_checkpoint="",
         use_fp16=False,
         fp16_scale_growth=1e-3,
-        log_dir = "/media/minzhe_guo/ckpt/mnist_edm_ckpt/exp1"
+        log_dir = "/media/minzhe_guo/ckpt/mnist_edm_ckpt/exp1",
+        data_dir = '/media/minzhe_guo/ckpt/dataset/mnist',
     )
     defaults.update(model_and_diffusion_defaults())
     parser = argparse.ArgumentParser()
