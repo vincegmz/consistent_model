@@ -47,7 +47,7 @@ def load_data(
         sorted_classes = {x: i for i, x in enumerate(sorted(set(class_names)))}
         classes = [sorted_classes[x] for x in class_names]
     dataset_type = data_dir.split('/')[-1]
-    if dataset_type == 'mnist-origin' or dataset_type == 'mnist':
+    if dataset_type == 'mnist-original' or dataset_type == 'mnist':
         from datasets.mnist import MNIST
         dataset = MNIST(
         root=data_dir,
