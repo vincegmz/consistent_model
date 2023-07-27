@@ -50,8 +50,8 @@ def load_data(
     if dataset_type == 'mnist-original' or dataset_type == 'mnist':
         from datasets.mnist import MNIST
         dataset = MNIST(
-        root=data_dir,
-        train=True,resolution = image_size,
+        data_dir,
+        resolution = image_size,
         shard=MPI.COMM_WORLD.Get_rank(),
         num_shards=MPI.COMM_WORLD.Get_size(),
         random_crop=random_crop,
