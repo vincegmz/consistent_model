@@ -46,27 +46,15 @@ def load_data(
         class_names = [bf.basename(path).split("_")[0] for path in all_files]
         sorted_classes = {x: i for i, x in enumerate(sorted(set(class_names)))}
         classes = [sorted_classes[x] for x in class_names]
-    dataset_type = data_dir.split('/')[-1]
-    if dataset_type == 'mnist-original' or dataset_type == 'mnist':
-        from datasets.mnist import MNIST
-        dataset = MNIST(
-        data_dir,
-        resolution = image_size,
+    dataset = ImageDataset(
+        image_size,
+        all_files,
+        classes=classes,
         shard=MPI.COMM_WORLD.Get_rank(),
         num_shards=MPI.COMM_WORLD.Get_size(),
         random_crop=random_crop,
-        random_flip=random_flip, 
+        random_flip=random_flip,
     )
-    else:
-        dataset = ImageDataset(
-            image_size,
-            all_files,
-            classes=classes,
-            shard=MPI.COMM_WORLD.Get_rank(),
-            num_shards=MPI.COMM_WORLD.Get_size(),
-            random_crop=random_crop,
-            random_flip=random_flip,
-        )
     if deterministic:
         loader = DataLoader(
             dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=True

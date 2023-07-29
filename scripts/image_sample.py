@@ -20,7 +20,7 @@ from cm.script_util import (
 )
 from cm.random_util import get_generator
 from cm.karras_diffusion import karras_sample
-from PIL import Image
+
 
 def main():
     args = create_argparser().parse_args()
@@ -61,7 +61,7 @@ def main():
         model_kwargs = {}
         if args.class_cond:
             classes = th.randint(
-                low=2, high=3, size=(args.batch_size,), device=dist_util.dev()
+                low=0, high=NUM_CLASSES, size=(args.batch_size,), device=dist_util.dev()
             )
             model_kwargs["y"] = classes
 
@@ -86,10 +86,6 @@ def main():
         sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
         sample = sample.permute(0, 2, 3, 1)
         sample = sample.contiguous()
-        
-        for index,img in enumerate(all_images):
-            image = Image.fromarray(img.squeeze(0))
-            image.save(f'sample_{classes.item()}.png')
 
         gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
         dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL

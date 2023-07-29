@@ -270,7 +270,7 @@ class AttentionBlock(nn.Module):
         num_heads=1,
         num_head_channels=-1,
         use_checkpoint=False,
-        attention_type="flash",
+        attention_type="default",
         encoder_channels=None,
         dims=2,
         channels_last=False,
@@ -324,8 +324,6 @@ class AttentionBlock(nn.Module):
         else:
             h = checkpoint(self.attention, (qkv,), (), self.use_attention_checkpoint)
         h = h.view(b, -1, *spatial)
-        if list(self.proj_out.parameters())[0].dtype == th.float16 and h.dtype == th.float32:
-            h = h.to(th.float16)
         h = self.proj_out(h)
         return x + h
 

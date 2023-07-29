@@ -10,7 +10,7 @@ from PIL import Image
 from cm.image_datasets import random_crop_arr,center_crop_arr
 import random
 class MNIST(Dataset):
-    def __init__(self,data_dir = '/media/minzhe_guo/ckpt/dataset/mnist',
+    def __init__(self,data_dir,
                 shard=0,
                 num_shards=1,
                 random_crop=False,
