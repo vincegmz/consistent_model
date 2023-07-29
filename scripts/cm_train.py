@@ -159,6 +159,7 @@ def create_argparser():
         resume_checkpoint="",
         use_fp16=False,
         fp16_scale_growth=1e-3,
+        log_dir = '~/exp/minzhe/imagenet_edm_ckpt'
     )
     defaults.update(model_and_diffusion_defaults())
     defaults.update(cm_train_defaults())
