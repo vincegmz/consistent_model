@@ -341,7 +341,7 @@ class QKVFlashAttention(nn.Module):
         **kwargs,
     ) -> None:
         from einops import rearrange
-        from flash_attn.flash_attention import FlashAttention
+        # from flash_attn.flash_attention import FlashAttention
 
         assert batch_first
         factory_kwargs = {"device": device, "dtype": dtype}
