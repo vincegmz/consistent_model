@@ -24,8 +24,9 @@ from PIL import Image
 
 def main():
     args = create_argparser().parse_args()
+
     dist_util.setup_dist()
-    logger.configure(dir = args.output_dir)
+    logger.configure()
 
     if "consistency" in args.training_mode:
         distillation = True
@@ -54,44 +55,39 @@ def main():
 
     all_images = []
     all_labels = []
+    generator = get_generator(args.generator, args.num_samples, args.seed)
+
     while len(all_images) * args.batch_size < args.num_samples:
-        for i in range(24):
-            generator = get_generator(args.generator, args.num_samples, i)
-            model_kwargs = {}
-            num_classes = 1
-            target_class = i%num_classes
-            if args.class_cond:
-                classes = th.randint(
-                    low=target_class, high=target_class+1, size=(args.batch_size,), device=dist_util.dev()
-                )
-                model_kwargs["y"] = classes
-
-            sample = karras_sample(
-                diffusion,
-                model,
-                (args.batch_size, 3, args.image_size, args.image_size),
-                steps=args.steps,
-                model_kwargs=model_kwargs,
-                device=dist_util.dev(),
-                clip_denoised=args.clip_denoised,
-                sampler=args.sampler,
-                sigma_min=args.sigma_min,
-                sigma_max=args.sigma_max,
-                s_churn=args.s_churn,
-                s_tmin=args.s_tmin,
-                s_tmax=args.s_tmax,
-                s_noise=args.s_noise,
-                generator=generator,
-                ts=ts,
+        model_kwargs = {}
+        if args.class_cond:
+            target_class = len(all_images)%10
+            classes = th.randint(
+                low=target_class, high=target_class+1, size=(args.batch_size,), device=dist_util.dev()
             )
-            sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
-            sample = sample.permute(0, 2, 3, 1)
-            sample = sample.contiguous()
-            
-            for index,img in enumerate(sample):
-                image = Image.fromarray(img.cpu().numpy())
-                image.save(os.path.join(args.output_dir,f'sample_{i}.png'))
+            model_kwargs["y"] = classes
 
+        sample = karras_sample(
+            diffusion,
+            model,
+            (args.batch_size, 3, args.image_size, args.image_size),
+            steps=args.steps,
+            model_kwargs=model_kwargs,
+            device=dist_util.dev(),
+            clip_denoised=args.clip_denoised,
+            sampler=args.sampler,
+            sigma_min=args.sigma_min,
+            sigma_max=args.sigma_max,
+            s_churn=args.s_churn,
+            s_tmin=args.s_tmin,
+            s_tmax=args.s_tmax,
+            s_noise=args.s_noise,
+            generator=generator,
+            ts=ts,
+        )
+        sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
+        sample = sample.permute(0, 2, 3, 1)
+        sample = sample.contiguous()
+        
         gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
         dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
         all_images.extend([sample.cpu().numpy() for sample in gathered_samples])
@@ -135,9 +131,9 @@ def create_argparser():
         s_noise=1.0,
         steps=40,
         model_path="",
-        seed=40,
+        seed=42,
         ts="",
-        output_dir = 'output/exp5.1-out'
+        output_dir = 'output'
     )
     defaults.update(model_and_diffusion_defaults())
     parser = argparse.ArgumentParser()

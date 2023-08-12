@@ -16,15 +16,16 @@ from cm.script_util import (
     create_ema_and_scales_fn,
 )
 from cm.train_util import CMTrainLoop
+from cm.ewc import EWC
 import torch.distributed as dist
 import copy
-
-
+import torch as th
+from cm.unet import ResBlock, AttentionBlock
 def main():
     args = create_argparser().parse_args()
 
     dist_util.setup_dist()
-    logger.configure()
+    logger.configure(dir = args.log_dir)
 
     logger.log("creating model and diffusion...")
     ema_scale_fn = create_ema_and_scales_fn(
@@ -52,6 +53,57 @@ def main():
     model.train()
     if args.use_fp16:
         model.convert_to_fp16()
+    if args.invert:
+        if args.model_path is not None:
+            model.load_state_dict(
+                    dist_util.load_state_dict(args.model_path, map_location="cpu"),
+            )
+        else:
+            print("For inversion, a pretrained model must be present")
+            exit(1)
+        for param in model.parameters():
+            param.requires_grad = False
+        for param in model.label_emb.parameters():
+            param.requires_grad = True
+        
+        # Fine Tune ALL resblocks off output_block
+        # for block in model.output_blocks:
+        #     for layer in block:
+        #         if isinstance(layer, AttentionBlock):
+        #             for param in layer.parameters():
+        #                 param.requires_grad = True
+
+        # Fine Tune ALL resblocks off output_block
+        # for block in model.output_blocks:
+        #     for layer in block:
+        #         if isinstance(layer, ResBlock):
+        #             for param in layer.parameters():
+        #                 param.requires_grad = True
+        last_resblock = None
+        for block in model.output_blocks:
+            for layer in block:
+                if isinstance(layer, ResBlock):
+                    last_resblock = layer
+                    for param in layer.parameters():
+                        param.requires_grad = True
+        if last_resblock is not None:
+            for param in last_resblock.parameters():
+                param.requires_grad = True  
+        last_attentionblock = None
+        for block in model.output_blocks:
+            for layer in block:
+                if isinstance(layer, AttentionBlock):
+                    last_attentionblock = layer
+                    for param in layer.parameters():
+                        param.requires_grad = True
+        if last_attentionblock is not None:
+            for param in last_attentionblock.parameters():
+                param.requires_grad = True 
+        # for name, param in model.named_parameters():
+        #     if 'qkv' in name and 'out' in name:
+        #         param.requires_grad = True
+        # for param in model.output_blocks.parameters():
+        #     param.requires_grad = True
 
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
 
@@ -70,7 +122,11 @@ def main():
         batch_size=batch_size,
         image_size=args.image_size,
         class_cond=args.class_cond,
+        invert = args.invert
     )
+
+    # if args.ewc:
+    #     ewc_model = EWC(model,data)
 
     if len(args.teacher_model_path) > 0:  # path to the teacher score model.
         logger.log(f"loading the teacher model from {args.teacher_model_path}")
@@ -126,6 +182,7 @@ def main():
         training_mode=args.training_mode,
         ema_scale_fn=ema_scale_fn,
         total_training_steps=args.total_training_steps,
+        ewc = args.ewc,
         diffusion=diffusion,
         data=data,
         batch_size=batch_size,
@@ -139,7 +196,7 @@ def main():
         fp16_scale_growth=args.fp16_scale_growth,
         schedule_sampler=schedule_sampler,
         weight_decay=args.weight_decay,
-        lr_anneal_steps=args.lr_anneal_steps,
+        lr_anneal_steps=args.lr_anneal_steps
     ).run_loop()
 
 
@@ -159,6 +216,10 @@ def create_argparser():
         resume_checkpoint="",
         use_fp16=False,
         fp16_scale_growth=1e-3,
+        log_dir = "/media/minzhe_guo/ckpt/mnistm/cd_ckpt/exp1",
+        invert = False,
+        model_path = None,
+        ewc = False,
     )
     defaults.update(model_and_diffusion_defaults())
     defaults.update(cm_train_defaults())
