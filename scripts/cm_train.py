@@ -19,11 +19,17 @@ from cm.train_util import CMTrainLoop
 from cm.ewc import EWC
 import torch.distributed as dist
 import copy
+import os
 import torch as th
 from cm.unet import ResBlock, AttentionBlock
 def main():
     args = create_argparser().parse_args()
-
+    os.makedirs(args.ckpt_dir,exist_ok=True)
+    ckpt_files = [file for file in os.listdir(args.ckpt_dir) if file.startswith('model') and file.endswith('.pt')]
+    if len(ckpt_files) !=0:
+        resume_ckpt = os.path.join(args.ckpt_dir,sorted(ckpt_files,reverse=True)[0])
+    else:
+        resume_ckpt = ""
     dist_util.setup_dist()
     logger.configure(dir = args.log_dir)
 
@@ -191,12 +197,13 @@ def main():
         ema_rate=args.ema_rate,
         log_interval=args.log_interval,
         save_interval=args.save_interval,
-        resume_checkpoint=args.resume_checkpoint,
+        resume_checkpoint=resume_ckpt,
         use_fp16=args.use_fp16,
         fp16_scale_growth=args.fp16_scale_growth,
         schedule_sampler=schedule_sampler,
         weight_decay=args.weight_decay,
-        lr_anneal_steps=args.lr_anneal_steps
+        lr_anneal_steps=args.lr_anneal_steps,
+        ckpt_dir = args.ckpt_dir
     ).run_loop()
 
 
@@ -217,6 +224,7 @@ def create_argparser():
         use_fp16=False,
         fp16_scale_growth=1e-3,
         log_dir = "/media/minzhe_guo/ckpt/mnistm/cd_ckpt/exp1",
+        ckpt_dir = "/media/minzhe_guo/ckpt/mnistm/cd_ckpt/exp1",
         invert = False,
         model_path = None,
         ewc = False,

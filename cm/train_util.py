@@ -44,8 +44,10 @@ class TrainLoop:
         schedule_sampler=None,
         weight_decay=0.0,
         lr_anneal_steps=0,
+        ckpt_dir = None,
     ):
-        self.model = model
+        self.ckpt_dir = ckpt_dir
+        self.model = model.to(dist_util.dev())
         self.diffusion = diffusion
         self.data = data
         self.batch_size = batch_size
@@ -114,6 +116,7 @@ class TrainLoop:
             self.ddp_model = self.model
 
         self.step = self.resume_step
+        self.resume_step = 0
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
@@ -123,7 +126,7 @@ class TrainLoop:
             if dist.get_rank() == 0:
                 logger.log(f"loading model from checkpoint: {resume_checkpoint}...")
                 self.model.load_state_dict(
-                    dist_util.load_state_dict(
+                    th.load(
                         resume_checkpoint, map_location=dist_util.dev()
                     ),
                 )
@@ -139,7 +142,7 @@ class TrainLoop:
         if ema_checkpoint:
             if dist.get_rank() == 0:
                 logger.log(f"loading EMA from checkpoint: {ema_checkpoint}...")
-                state_dict = dist_util.load_state_dict(
+                state_dict = th.load(
                     ema_checkpoint, map_location=dist_util.dev()
                 )
                 ema_params = self.mp_trainer.state_dict_to_master_params(state_dict)
@@ -154,10 +157,11 @@ class TrainLoop:
         )
         if bf.exists(opt_checkpoint):
             logger.log(f"loading optimizer state from checkpoint: {opt_checkpoint}")
-            state_dict = dist_util.load_state_dict(
-                opt_checkpoint, map_location=dist_util.dev()
-            )
-            self.opt.load_state_dict(state_dict)
+            if dist.get_rank() == 0:
+                state_dict = th.load(
+                    opt_checkpoint, map_location=dist_util.dev()
+                )
+                self.opt.load_state_dict(state_dict)
 
     def run_loop(self):
         while not self.lr_anneal_steps or self.step < self.lr_anneal_steps:
@@ -252,7 +256,7 @@ class TrainLoop:
                     filename = f"model{(self.step+self.resume_step):06d}.pt"
                 else:
                     filename = f"ema_{rate}_{(self.step+self.resume_step):06d}.pt"
-                with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
+                with bf.BlobFile(bf.join(self.ckpt_dir, filename), "wb") as f:
                     th.save(state_dict, f)
 
         for rate, params in zip(self.ema_rate, self.ema_params):
@@ -260,7 +264,7 @@ class TrainLoop:
 
         if dist.get_rank() == 0:
             with bf.BlobFile(
-                bf.join(get_blob_logdir(), f"opt{(self.step+self.resume_step):06d}.pt"),
+                bf.join(self.ckpt_dir, f"opt{(self.step+self.resume_step):06d}.pt"),
                 "wb",
             ) as f:
                 th.save(self.opt.state_dict(), f)
@@ -338,7 +342,7 @@ class CMTrainLoop(TrainLoop):
                     "loading model from checkpoint: {resume_target_checkpoint}..."
                 )
                 self.target_model.load_state_dict(
-                    dist_util.load_state_dict(
+                    th.load(
                         resume_target_checkpoint, map_location=dist_util.dev()
                     ),
                 )
@@ -358,7 +362,7 @@ class CMTrainLoop(TrainLoop):
                     "loading model from checkpoint: {resume_teacher_checkpoint}..."
                 )
                 self.teacher_model.load_state_dict(
-                    dist_util.load_state_dict(
+                    th.load(
                         resume_teacher_checkpoint, map_location=dist_util.dev()
                     ),
                 )
@@ -369,8 +373,8 @@ class CMTrainLoop(TrainLoop):
     def run_loop(self):
         saved = False
         while (
-            not self.lr_anneal_steps
-            or self.step < self.lr_anneal_steps
+            # not self.lr_anneal_steps
+            self.step < self.lr_anneal_steps
             or self.global_step < self.total_training_steps
         ):
             batch, cond = next(self.data)
@@ -530,7 +534,6 @@ class CMTrainLoop(TrainLoop):
         import blobfile as bf
 
         step = self.global_step
-
         def save_checkpoint(rate, params):
             state_dict = self.mp_trainer.master_params_to_state_dict(params)
             if dist.get_rank() == 0:
@@ -539,7 +542,7 @@ class CMTrainLoop(TrainLoop):
                     filename = f"model{step:06d}.pt"
                 else:
                     filename = f"ema_{rate}_{step:06d}.pt"
-                with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
+                with bf.BlobFile(bf.join(self.ckpt_dir, filename), "wb") as f:
                     th.save(state_dict, f)
 
         for rate, params in zip(self.ema_rate, self.ema_params):
@@ -548,7 +551,7 @@ class CMTrainLoop(TrainLoop):
         logger.log("saving optimizer state...")
         if dist.get_rank() == 0:
             with bf.BlobFile(
-                bf.join(get_blob_logdir(), f"opt{step:06d}.pt"),
+                bf.join(self.ckpt_dir, f"opt{step:06d}.pt"),
                 "wb",
             ) as f:
                 th.save(self.opt.state_dict(), f)
@@ -557,12 +560,12 @@ class CMTrainLoop(TrainLoop):
             if self.target_model:
                 logger.log("saving target model state")
                 filename = f"target_model{step:06d}.pt"
-                with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
+                with bf.BlobFile(bf.join(self.ckpt_dir, filename), "wb") as f:
                     th.save(self.target_model.state_dict(), f)
             if self.teacher_model and self.training_mode == "progdist":
                 logger.log("saving teacher model state")
                 filename = f"teacher_model{step:06d}.pt"
-                with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
+                with bf.BlobFile(bf.join(self.ckpt_dir, filename), "wb") as f:
                     th.save(self.teacher_model.state_dict(), f)
 
         # Save model parameters last to prevent race conditions where a restart

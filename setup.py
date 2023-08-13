@@ -18,5 +18,6 @@ setup(
         "clip @ git+https://github.com/openai/CLIP.git",
         "mpi4py",
         "pillow",
+"einops",
     ],
 )
