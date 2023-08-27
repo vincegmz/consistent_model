@@ -50,6 +50,7 @@ def load_data(
         num_shards=MPI.COMM_WORLD.Get_size(),
         random_crop=random_crop,
         random_flip=random_flip,
+        class_cond=class_cond
         )
         
     else:
@@ -58,7 +59,7 @@ def load_data(
         if class_cond:
             # Assume classes are the first part of the filename,
             # before an underscore.
-            if invert:
+            if invert == 'same':
                 class_names = [data_dir.split('/')[-1] for _ in all_files]
             else:
                 class_names = [bf.basename(path).split("_")[0] for path in all_files]
@@ -96,6 +97,139 @@ def load_data(
     while True:
         yield from loader
 
+def create_dataset(  *,
+    data_dir,
+    image_size,
+    class_cond=False,
+    random_crop=False,
+    random_flip=False,
+    train = True,
+    train_classifier = True,
+    domain = None,
+    transforms = None,
+    standard_augment = False):
+    if not data_dir:
+        raise ValueError("unspecified data directory")
+    dataset_type = data_dir.split('/')[-1]
+    if dataset_type == 'svhn':
+        assert image_size == 32
+        from datasets.svhn import SVHN
+        if train:
+            split = 'train'
+        else:
+            split = 'test'
+        dataset = SVHN(
+        data_dir,
+        resolution = image_size,
+        shard=MPI.COMM_WORLD.Get_rank(),
+        num_shards=MPI.COMM_WORLD.Get_size(),
+        random_crop=random_crop,
+        random_flip=random_flip,
+        download=True,
+        class_cond=class_cond,
+        split = split,
+        train_classifer=train_classifier
+        )
+    elif dataset_type == 'mnistm':
+        assert image_size == 28
+        from datasets.mnistm import MNISTM
+        dataset = MNISTM(
+        data_dir,
+        train = train ,
+        resolution = image_size,
+        shard=MPI.COMM_WORLD.Get_rank(),
+        num_shards=MPI.COMM_WORLD.Get_size(),
+        random_crop=random_crop,
+        random_flip=random_flip,
+        class_cond=class_cond,
+        train_classifier= train_classifier,
+        standard_augment = standard_augment
+        )
+    elif dataset_type == 'domainNet':
+        if domain is None:
+            raise NotImplementedError('domainNet requires domain parameter')
+        assert domain in ['clipart','real','sketch','painting','infograph','quickdraw']
+        from datasets.domainNet import DomainNet
+        dataset = DomainNet(
+            root=data_dir,
+            train=train,resolution = image_size,
+            shard=MPI.COMM_WORLD.Get_rank(),
+            num_shards=MPI.COMM_WORLD.Get_size(),
+            random_crop=random_crop,
+            random_flip=random_flip,
+            domain = domain,
+            class_cond = class_cond,
+            train_classifier = train_classifier,
+            transforms = transforms
+        )
+    else:
+        all_files = _list_image_files_recursively(data_dir)
+        classes = None
+        if class_cond:
+            # Assume classes are the first part of the filename,
+            # before an underscore.
+            class_names = [data_dir.split('/')[-1] for _ in all_files]
+            # if standard_augment:
+            #     class_names = [data_dir.split('/')[-1] for _ in all_files]
+            
+            # else:
+            #     class_names = [bf.basename(path).split("_")[0] for path in all_files]
+            sorted_classes = {x: i for i, x in enumerate(sorted(set(class_names)))}
+            classes = [sorted_classes[x] for x in class_names]
+        dataset_type = data_dir.split('/')[-1]
+        if dataset_type == 'mnist-original' or dataset_type == 'mnist':
+            assert image_size == 28
+            from datasets.mnist import MNIST
+            dataset = MNIST(
+            data_dir,
+            resolution = image_size,
+            shard=MPI.COMM_WORLD.Get_rank(),
+            num_shards=MPI.COMM_WORLD.Get_size(),
+            random_crop=random_crop,
+            random_flip=random_flip,
+            class_cond = class_cond,
+            train = train,
+            train_classifier = train_classifier
+        )
+        elif dataset_type == "Augmented_color_zero" or not standard_augment:
+            root = '/media/minzhe/ckpt/dataset/mnistm'
+            from datasets.eval_inversion import EvalInversionDataset
+            dataset = EvalInversionDataset(root,image_size,
+                all_files,
+                classes=classes,
+                shard=MPI.COMM_WORLD.Get_rank(),
+                num_shards=MPI.COMM_WORLD.Get_size(),
+                random_crop=random_crop,
+                random_flip=random_flip,
+                train=train
+            )
+        else:
+            if standard_augment:
+                if dataset_type == 'color_zero':
+                    root = '/media/minzhe/ckpt/dataset/mnistm'
+                    from datasets.standard_augment import StandardAugmentDataset
+                    dataset = StandardAugmentDataset(root,image_size,
+                        all_files,
+                        classes=classes,
+                        shard=MPI.COMM_WORLD.Get_rank(),
+                        num_shards=MPI.COMM_WORLD.Get_size(),
+                        random_crop=random_crop,
+                        random_flip=random_flip,
+                        train=train
+                    )
+                else:
+                    raise NotImplementedError
+            else:
+                dataset = ImageDataset(
+                image_size,
+                all_files,
+                classes=classes,
+                shard=MPI.COMM_WORLD.Get_rank(),
+                num_shards=MPI.COMM_WORLD.Get_size(),
+                random_crop=random_crop,
+                random_flip=random_flip,
+                )
+    return dataset
 
 def _list_image_files_recursively(data_dir):
     results = []

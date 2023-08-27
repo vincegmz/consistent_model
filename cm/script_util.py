@@ -4,7 +4,7 @@ from .karras_diffusion import KarrasDenoiser
 from .unet import UNetModel
 import numpy as np
 
-NUM_CLASSES = 10
+NUM_CLASSES = 345
 
 
 def cm_train_defaults():

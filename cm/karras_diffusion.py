@@ -113,6 +113,7 @@ class KarrasDenoiser:
         teacher_model=None,
         teacher_diffusion=None,
         noise=None,
+        invert = None,
     ):
         if model_kwargs is None:
             model_kwargs = {}
@@ -134,11 +135,15 @@ class KarrasDenoiser:
             raise NotImplementedError("Must have a target model")
 
         if teacher_model:
+            if invert is None:
+                @th.no_grad()
+                def teacher_denoise_fn(x, t):
+                    return teacher_diffusion.denoise(teacher_model, x, t, **model_kwargs)[1]
+            else:
+                def teacher_denoise_fn(x, t):
+                    return teacher_diffusion.denoise(teacher_model, x, t, **model_kwargs)[1]
 
-            @th.no_grad()
-            def teacher_denoise_fn(x, t):
-                return teacher_diffusion.denoise(teacher_model, x, t, **model_kwargs)[1]
-
+        
         @th.no_grad()
         def heun_solver(samples, t, next_t, x0):
             x = samples
@@ -194,6 +199,8 @@ class KarrasDenoiser:
             x_t2 = euler_solver(x_t, t, t2, x_start).detach()
         else:
             x_t2 = heun_solver(x_t, t, t2, x_start).detach()
+            if invert is not None:
+                teacher_pred = teacher_denoise_fn(x_t,t)
 
         th.set_rng_state(dropout_state)
         distiller_target = target_denoise_fn(x_t2, t2)
@@ -222,6 +229,9 @@ class KarrasDenoiser:
                 distiller_target = F.interpolate(
                     distiller_target, size=224, mode="bilinear"
                 )
+                if invert is not None:
+                    teacher_pred = F.interpolate(teacher_pred,size=224,mode = 'bilinear')
+                    x_start_resize = F.interpolate(x_start,size = 224,mode='bilinear')
 
             loss = (
                 self.lpips_loss(
@@ -230,6 +240,8 @@ class KarrasDenoiser:
                 )
                 * weights
             )
+            teacher_loss = 0 if invert is None else self.lpips_loss((teacher_pred+1)/2.0,(x_start_resize+1)/2.0)*weights
+            loss += teacher_loss
         else:
             raise ValueError(f"Unknown loss norm {self.loss_norm}")
 

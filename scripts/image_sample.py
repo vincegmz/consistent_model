@@ -55,7 +55,7 @@ def main():
     all_images = []
     all_labels = []
     while len(all_images) * args.batch_size < args.num_samples:
-        for i in range(24):
+        for i in range(100):
             generator = get_generator(args.generator, args.num_samples, i)
             model_kwargs = {}
             num_classes = 1

@@ -15,11 +15,21 @@ from cm.script_util import (
 )
 from cm.train_util import TrainLoop
 import torch.distributed as dist
-
-
+from cm.unet import ResBlock, AttentionBlock
+import os
 def main():
     args = create_argparser().parse_args()
-
+    os.makedirs(args.ckpt_dir,exist_ok=True)
+    ckpt_files = [file for file in os.listdir(args.ckpt_dir) if file.startswith('model') and file.endswith('.pt')]
+    if len(ckpt_files) !=0:
+        if args.resume_checkpoint == "":
+            resume_ckpt = os.path.join(args.ckpt_dir,sorted(ckpt_files,reverse=True)[0])
+        else:
+            resume_ckpt = args.resume_checkpoint
+    else:
+        resume_ckpt = ""
+    dist_util.setup_dist()
+    logger.configure(dir = args.log_dir)
     dist_util.setup_dist()
     logger.configure(dir = args.log_dir)
 
@@ -28,6 +38,64 @@ def main():
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
     model.to(dist_util.dev())
+
+    if args.invert:
+        if args.model_path is not None:
+            model.load_state_dict(
+                    dist_util.load_state_dict(args.model_path, map_location="cpu"),
+            )
+        else:
+            print("For inversion, a pretrained model must be present")
+            exit(1)
+        for param in model.parameters():
+            param.requires_grad = False
+        # for param in model.output_blocks.parameters():
+        #     param.requires_grad = True
+
+        # for module in model.modules():
+        #     if isinstance(module, AttentionBlock):
+        #         for param in module.parameters():
+        #             param.requires_grad = True
+        # for block in model.output_blocks:
+        #     for layer in block:
+        #         if isinstance(layer, AttentionBlock):
+        #             for param in layer.parameters():
+        #                 param.requires_grad = True
+        # for block in model.input_blocks:
+        #     for layer in block:
+        #         if isinstance(layer, AttentionBlock):
+        #             for param in layer.parameters():
+        #                 param.requires_grad = True
+        
+        last_resblock = None
+        for block in model.output_blocks:
+            for layer in block:
+                if isinstance(layer, ResBlock):
+                    last_resblock = layer
+        if last_resblock is not None:
+            for param in last_resblock.parameters():
+                param.requires_grad = True
+        # for i, block in enumerate(model.output_blocks):
+        #     if (i+1) % (args.num_res_blocks+1) == 0:
+        #         last_resblock = None
+        #         for layer in block:
+        #             if isinstance(layer,ResBlock):
+        #                 last_resblock = layer
+        #         if last_resblock is not None:
+        #             for param in last_resblock.parameters():
+        #                 param.requires_grad = True
+        if args.class_cond:
+            for param in model.label_emb.parameters():
+                param.requires_grad = True
+        for i, block in enumerate(model.output_blocks):
+            if i % (args.num_res_blocks+1) == 0:
+                last_attblock = None
+                for layer in block:
+                    if isinstance(layer,AttentionBlock):
+                        last_attblock = layer
+                if last_attblock is not None:
+                    for param in last_attblock.parameters():
+                        param.requires_grad = True
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
 
     logger.log("creating data loader...")
@@ -45,6 +113,8 @@ def main():
         batch_size=batch_size,
         image_size=args.image_size,
         class_cond=args.class_cond,
+        invert=args.invert,
+        deterministic= args.deterministic
     )
 
     logger.log("creating data loader...")
@@ -60,12 +130,14 @@ def main():
         ema_rate=args.ema_rate,
         log_interval=args.log_interval,
         save_interval=args.save_interval,
-        resume_checkpoint=args.resume_checkpoint,
+        resume_checkpoint=resume_ckpt,
         use_fp16=args.use_fp16,
         fp16_scale_growth=args.fp16_scale_growth,
         schedule_sampler=schedule_sampler,
         weight_decay=args.weight_decay,
         lr_anneal_steps=args.lr_anneal_steps,
+        ckpt_dir=args.ckpt_dir,
+        augment =args.augment
     ).run_loop()
 
 
@@ -85,7 +157,12 @@ def create_argparser():
         resume_checkpoint="",
         use_fp16=False,
         fp16_scale_growth=1e-3,
-        log_dir = "/media/minzhe_guo/ckpt/mnist_edm_ckpt/exp1",
+        log_dir = "/media/minzhe_guo/ckpt/mnistm/cd_ckpt/exp1",
+        ckpt_dir = "/media/minzhe_guo/ckpt/mnistm/cd_ckpt/exp1",
+        invert = None,
+        model_path = None,
+        augment = 1,
+        deterministic = False
     )
     defaults.update(model_and_diffusion_defaults())
     parser = argparse.ArgumentParser()

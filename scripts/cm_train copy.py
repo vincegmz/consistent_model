@@ -16,12 +16,10 @@ from cm.script_util import (
     create_ema_and_scales_fn,
 )
 from cm.train_util import CMTrainLoop
-from cm.ewc import EWC
 import torch.distributed as dist
 import copy
 import os
-import torch as th
-from cm.unet import ResBlock, AttentionBlock
+
 def main():
     args = create_argparser().parse_args()
     os.makedirs(args.ckpt_dir,exist_ok=True)
@@ -59,6 +57,7 @@ def main():
     model.train()
     if args.use_fp16:
         model.convert_to_fp16()
+
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
 
     logger.log("creating data loader...")
@@ -76,11 +75,7 @@ def main():
         batch_size=batch_size,
         image_size=args.image_size,
         class_cond=args.class_cond,
-        invert = args.invert
     )
-
-    # if args.ewc:
-    #     ewc_model = EWC(model,data)
 
     if len(args.teacher_model_path) > 0:  # path to the teacher score model.
         logger.log(f"loading the teacher model from {args.teacher_model_path}")
@@ -109,45 +104,7 @@ def main():
         teacher_diffusion = None
 
     # load the target model for distillation, if path specified.
-    if args.invert:
-        if args.model_path is not None:
-            model.load_state_dict(
-                    dist_util.load_state_dict(args.model_path, map_location="cpu"),
-            )
-        else:
-            print("For inversion, a pretrained model must be present")
-            exit(1)
-        for param in model.parameters():
-            param.requires_grad = False
-        if args.class_cond:
-            for param in model.label_emb.parameters():
-                param.requires_grad = True
-        for i, block in enumerate(model.output_blocks):
-            if i % (args.num_res_blocks+1) == 0:
-                last_attblock = None
-                for layer in block:
-                    if isinstance(layer,AttentionBlock):
-                        last_attblock = layer
-                if last_attblock is not None:
-                    for param in last_attblock.parameters():
-                        param.requires_grad = True
 
-        if teacher_model is not None:
-            for param in teacher_model.parameters():
-                param.requires_grad = False
-            if args.class_cond:
-                for param in teacher_model.label_emb.parameters():
-                    param.requires_grad = True
-            for i, block in enumerate(teacher_model.output_blocks):
-                if i % (args.num_res_blocks+1) == 0:
-                    last_attblock = None
-                    for layer in block:
-                        if isinstance(layer,AttentionBlock):
-                            last_attblock = layer
-                    if last_attblock is not None:
-                        for param in last_attblock.parameters():
-                            param.requires_grad = True
-        
     logger.log("creating the target model")
     target_model, _ = create_model_and_diffusion(
         **model_and_diffusion_kwargs,
@@ -188,9 +145,7 @@ def main():
         schedule_sampler=schedule_sampler,
         weight_decay=args.weight_decay,
         lr_anneal_steps=args.lr_anneal_steps,
-        ckpt_dir = args.ckpt_dir,
-        augment = args.augment,
-        invert = args.invert
+        ckpt_dir = args.ckpt_dir
     ).run_loop()
 
 
@@ -210,11 +165,8 @@ def create_argparser():
         resume_checkpoint="",
         use_fp16=False,
         fp16_scale_growth=1e-3,
-        log_dir = "/media/minzhe_guo/ckpt/mnistm/cd_ckpt/exp1",
-        ckpt_dir = "/media/minzhe_guo/ckpt/mnistm/cd_ckpt/exp1",
-        invert = None,
-        model_path = None,
-        augment = 2,
+        log_dir = "/media/minzhe_guo/ckpt/mnist_edm_ckpt/exp1",
+        ckpt_dir = '/home/ubuntu/exp/minzhe/mnist_edm_ckpt',
     )
     defaults.update(model_and_diffusion_defaults())
     defaults.update(cm_train_defaults())
