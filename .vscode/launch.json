@@ -5,6 +5,61 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "train_classifer",
+            "type": "python",
+            "request": "launch",
+            "program": "evaluations/LeNet.py",
+            "console": "integratedTerminal",
+            "args": ["--data_dir","/home/minzhe_guo/Downloads/datasets/Augmented_color_zero",//"/home/ubuntu/dataset/minzhe/consistent_model/mnistm"
+            "--ckpt_dir","/media/minzhe/ckpt/mnistm_classifer/edm_inversion",
+            "--image_size","64",
+            //"--domain","infograph",
+            "--resume","False",
+            "--standard_augment","False",
+            "--epoch","500"],
+            "justMyCode": true
+        },
+        {
+            "name": "cd_invert",
+            "type": "python",
+            "request": "launch",
+            "program": "scripts/cm_train.py",
+            "console": "integratedTerminal",
+            "args":[
+            "--training_mode", "consistency_distillation", 
+            "--target_ema_mode", "fixed", 
+            "--start_ema", "0.95", 
+            "--scale_mode", "fixed", 
+            "--start_scales", "40", 
+            "--total_training_steps", "20000",
+            "--lr_anneal_steps", "0", 
+            "--teacher_model_path","/media/minzhe/ckpt/domainNet_edm_ckpt/real/uncon/model030000.pt",
+            "--model_path", "/media/minzhe/ckpt/domainNet_cd_ckpt/real/uncon/model040000.pt", 
+            "--attention_resolutions", "32,16,8", 
+            "--class_cond", "False", 
+            "--use_scale_shift_norm", "True", 
+            "--dropout", "0.0", 
+            "--teacher_dropout", "0.1", 
+            "--ema_rate", "0.999,0.9999,0.9999432189950708",
+            "--global_batch_size", "4",
+            "--image_size", "64", 
+            "--lr", "0.000008",//"0.000008", 
+            "--num_channels", "96",
+            "--num_head_channels", "32", 
+            "--num_res_blocks", "2", 
+            "--resblock_updown", "True", 
+            "--schedule_sampler", "uniform", 
+            "--use_fp16", "True",
+            "--weight_decay", "0.0", 
+            "--weight_schedule", "uniform", 
+            "--data_dir", "/home/minzhe_guo/Downloads/datasets/color_zero",
+            "--save_interval", "5000",
+            "--log_dir","/media/minzhe/ckpt/inversion/cd_invert/exp51",
+            "--ckpt_dir","/media/minzhe/ckpt/inversion/cd_invert/exp51",
+            "--invert","same"]
+            ,"justMyCode": true
+        },
+        {
             "name": "CT-sample",
             "type": "python",
             "request": "launch",
@@ -20,7 +75,7 @@
                 "0,106,200",
                 "--steps",
                 "201",
-                "--model_path","/media/minzhe_guo/ckpt/mnist-ct-no-flip/exp8/model010000.pt", ///media/minzhe_guo/ckpt/inversion/CT-invert/exp9/model008000.pt
+                "--model_path","/media/minzhe_guo/ckpt/inversion/CT-invert/exp35/model004000.pt", ///media/minzhe_guo/ckpt/inversion/CT-invert/exp9/model008000.pt
                 "--attention_resolutions",
                 "32,16,8",
                 "--class_cond",
@@ -45,7 +100,42 @@
                 "False",
                 "--weight_schedule",
                 "uniform",
-                "--output_dir","output/pretrainedMNIST10000"
+                "--output_dir","output/mnistm2mnist"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "EDM invert",
+            "type": "python",
+            "request": "launch",
+            "program": "scripts/edm_train.py",
+            "args": [
+              "--attention_resolutions", "32,16,8",
+              "--class_cond", "True",
+              "--use_scale_shift_norm", "True",
+              "--dropout", "0.1",
+              "--ema_rate", "0.999,0.9999,0.9999432189950708",
+              "--global_batch_size", "16",
+              "--image_size", "64",
+              "--lr", "0.0001",//original_lr 0.0001
+              "--num_channels", "96", //original: 192
+              "--num_head_channels", "32", //original: 64
+              "--num_res_blocks", "2",
+              "--resblock_updown", "True",
+              "--schedule_sampler", "lognormal",
+              "--use_fp16", "False",
+              "--weight_decay", "0.0",
+              "--weight_schedule", "karras",
+              "--data_dir", "/home/minzhe_guo/Downloads/datasets/color_digits",
+              "--lr_anneal_steps","100000",
+              "--save_interval","2000",
+              "--log_dir","/media/minzhe/ckpt/inversion/edm-invert/exp51",
+              "--ckpt_dir","/media/minzhe/ckpt/inversion/edm-invert/exp51",
+              "--invert","different",
+              "--model_path","/media/minzhe/ckpt/domainNet_edm_ckpt/real/cond/model090000.pt",
+              "--augment","4",
+              "--deterministic","True",
+              //"--resume_checkpoint","/media/minzhe/ckpt/inversion/edm-invert/exp45/model007000.pt",
             ],
             "console": "integratedTerminal"
         },
@@ -108,12 +198,14 @@
                 "0.0",
                 "--weight_schedule",
                 "uniform",
-                "--data_dir", "/home/minzhe_guo/Downloads/datasets/color_zero",
+                "--data_dir", "/home/minzhe_guo/Downloads/datasets/colorless_zero",
                 "--save_interval", "2000",
-                "--log_dir","/media/minzhe_guo/ckpt/inversion/CT-invert/exp19",
-                "--invert","True",
-                "--model_path","/media/minzhe_guo/ckpt/mnist-ct-no-flip/exp8/model070000.pt",
-                //"--resume_checkpoint","/media/minzhe_guo/ckpt/inversion/CT-invert/exp17/model002000.pt"
+                "--log_dir","/media/minzhe_guo/ckpt/inversion/CT-invert/exp35",
+                "--ckpt_dir","/media/minzhe_guo/ckpt/inversion/CT-invert/exp35",
+                "--invert","same",
+                "--model_path","/media/minzhe_guo/ckpt/mnistm_ct_ckpt/fp32/model010000.pt"
+                //"--model_path","/media/minzhe_guo/ckpt/mnist-ct-no-flip/exp8/model070000.pt",
+                //"--resume_checkpoint","/media/minzhe_guo/ckpt/inversion/CT-invert/exp33/model005000.pt"
             ],
             "console": "integratedTerminal"
         },
@@ -175,7 +267,7 @@
                 "--attention_resolutions",
                 "32,16,8",
                 "--class_cond",
-                "False",
+                "True",
                 "--use_scale_shift_norm",
                 "True",
                 "--dropout",
@@ -209,6 +301,7 @@
                 "--data_dir", "/media/minzhe_guo/ckpt/dataset/mnist",
                 "--save_interval", "5000",
                 "--log_dir","/media/minzhe_guo/ckpt/mnist-ct-uncon-fp32/exp8.1",
+                "--ckpt_dir","/media/minzhe_guo/ckpt/mnist-ct-uncon-fp32/exp8.1"
                 //"--resume_checkpoint","/media/minzhe_guo/ckpt/mnist-ct-4imgs/exp6/model001000.pt"
             ],
             "console": "integratedTerminal"
@@ -265,7 +358,8 @@
               "--sampler",
               "heun",
               "--model_path",
-              "/media/minzhe_guo/ckpt/no-flash-edm-train/model100000.pt",
+              //"/media/minzhe/ckpt/domainNet_cd_ckpt/real/uncon/model040000.pt",
+              "/media/minzhe/ckpt/inversion/edm-invert/exp50/model013000.pt",
               "--attention_resolutions",
               "32,16,8",
               "--class_cond",
@@ -285,11 +379,13 @@
               "--resblock_updown",
               "True",
               "--use_fp16",
-              "True",
+              "False",
               "--use_scale_shift_norm",
               "True",
               "--weight_schedule",
-              "karras"
+              "karras",
+              "--output_dir",
+              "temp"
             ]
         },
         {
@@ -307,7 +403,7 @@
             "--total_training_steps", "20000",
             "--loss_norm", "l2-32", 
             "--lr_anneal_steps", "0", 
-            "--teacher_model_path", "/media/minzhe_guo/ckpt/mnistm_edm_ckpt/exp1/model100000.pt", 
+            "--teacher_model_path", "/media/minzhe_guo/ckpt/mnist_edm_ckpt/exp1/model100000.pt", 
             "--attention_resolutions", "32,16,8", 
             "--class_cond", "True", 
             "--use_scale_shift_norm", "True", 
@@ -327,7 +423,8 @@
             "--weight_schedule", "uniform", 
             "--data_dir", "/media/minzhe_guo/ckpt/dataset/mnistm",
             "--save_interval", "5000",
-            "--log_dir","/media/minzhe_guo/ckpt/mnistm_cd_ckpt/exp1"]
+            "--log_dir","/media/minzhe_guo/ckpt/mnist_cd_ckpt/exp1",
+            "--ckpt_dir","/media/minzhe_guo/ckpt/mnist_cd_ckpt/exp1"]
             ,"justMyCode": true
         },
 
