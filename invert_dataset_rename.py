@@ -2,7 +2,7 @@ import os
 import torch
 from PIL import Image
 
-num_imgs_per_digit = 10
+num_imgs_per_digit = 4
 
 root = '/media/minzhe/ckpt/dataset/mnistm'
 data_file = os.path.join(root,"MNISTM",'processed',"mnist_m_train.pt")

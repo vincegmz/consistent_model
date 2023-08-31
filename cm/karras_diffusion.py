@@ -89,7 +89,7 @@ class KarrasDenoiser:
         x_t = x_start + noise * append_dims(sigmas, dims)
         model_output, denoised = self.denoise(model, x_t, sigmas, **model_kwargs)
 
-        snrs = self.get_snr(sigmas)
+        snrs = self.get_snr(sigmas.float())
         weights = append_dims(
             get_weightings(self.weight_schedule, snrs, self.sigma_data), dims
         )
@@ -175,7 +175,7 @@ class KarrasDenoiser:
             samples = x + d * append_dims(next_t - t, dims)
 
             return samples
-
+        # indices = th.randperm(num_scales,device=x_start.device)[:x_start.shape[0]]
         indices = th.randint(
             0, num_scales - 1, (x_start.shape[0],), device=x_start.device
         )

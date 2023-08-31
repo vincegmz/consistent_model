@@ -6,7 +6,6 @@ import numpy as np
 
 NUM_CLASSES = 345
 
-
 def cm_train_defaults():
     return dict(
         teacher_model_path="",

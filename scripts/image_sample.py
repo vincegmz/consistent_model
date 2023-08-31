@@ -55,10 +55,10 @@ def main():
     all_images = []
     all_labels = []
     while len(all_images) * args.batch_size < args.num_samples:
-        for i in range(100):
+        for i in range(20):
             generator = get_generator(args.generator, args.num_samples, i)
             model_kwargs = {}
-            num_classes = 1
+            num_classes = 10
             target_class = i%num_classes
             if args.class_cond:
                 classes = th.randint(
