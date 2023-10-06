@@ -12,7 +12,6 @@ from . import dist_util, logger
 from .fp16_util import MixedPrecisionTrainer
 from .nn import update_ema
 from .resample import LossAwareSampler, UniformSampler
-
 from .fp16_util import (
     get_param_groups_and_shapes,
     make_master_params,
@@ -46,14 +45,18 @@ class TrainLoop:
         weight_decay=0.0,
         lr_anneal_steps=0,
         ckpt_dir = None,
+        augment = 1,
+        invert = None
     ):
         self.ckpt_dir = ckpt_dir
+        self.invert = invert
         self.model = model.to(dist_util.dev())
         self.diffusion = diffusion
         self.data = data
-        self.batch_size = batch_size
-        self.microbatch = microbatch if microbatch > 0 else batch_size
+        self.batch_size = batch_size*augment
+        self.microbatch = microbatch if microbatch > 0 else self.batch_size
         self.lr = lr
+        self.augment = augment
         self.ema_rate = (
             [ema_rate]
             if isinstance(ema_rate, float)
@@ -73,6 +76,7 @@ class TrainLoop:
         self.global_batch = self.batch_size * dist.get_world_size()
 
         self.sync_cuda = th.cuda.is_available()
+
         self._load_and_sync_parameters()
         self.mp_trainer = MixedPrecisionTrainer(
             model=self.model,
@@ -130,10 +134,9 @@ class TrainLoop:
                         resume_checkpoint, map_location=dist_util.dev()
                     ),
                 )
-                print('checkpint loaded')
+
         dist_util.sync_params(self.model.parameters())
         dist_util.sync_params(self.model.buffers())
-        print('distribute done')
 
     def _load_ema_parameters(self, rate):
         ema_params = copy.deepcopy(self.mp_trainer.master_params)
@@ -143,13 +146,11 @@ class TrainLoop:
         if ema_checkpoint:
             if dist.get_rank() == 0:
                 logger.log(f"loading EMA from checkpoint: {ema_checkpoint}...")
-                # state_dict = dist_util.load_state_dict(
-                #     ema_checkpoint, map_location=dist_util.dev()
-                # )
                 state_dict = th.load(
                     ema_checkpoint, map_location=dist_util.dev()
                 )
                 ema_params = self.mp_trainer.state_dict_to_master_params(state_dict)
+
         dist_util.sync_params(ema_params)
         return ema_params
 
@@ -161,15 +162,18 @@ class TrainLoop:
         if bf.exists(opt_checkpoint):
             logger.log(f"loading optimizer state from checkpoint: {opt_checkpoint}")
             if dist.get_rank() == 0:
-                state_dict = th.load(opt_checkpoint,map_location=dist_util.dev())
-            # state_dict = dist_util.load_state_dict(
-            #     opt_checkpoint, map_location=dist_util.dev()
-            # )
+                state_dict = th.load(
+                    opt_checkpoint, map_location=dist_util.dev()
+                )
                 self.opt.load_state_dict(state_dict)
 
     def run_loop(self):
         while not self.lr_anneal_steps or self.step < self.lr_anneal_steps:
             batch, cond = next(self.data)
+            if self.augment > 1:
+                batch = th.repeat_interleave(batch,self.augment,dim = 0)
+                if cond != {}:
+                    cond['y'] = th.repeat_interleave(cond['y'],self.augment,dim = 0)
             self.run_step(batch, cond)
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
@@ -252,7 +256,6 @@ class TrainLoop:
         logger.logkv("samples", (self.step + self.resume_step + 1) * self.global_batch)
 
     def save(self):
-
         def save_checkpoint(rate, params):
             state_dict = self.mp_trainer.master_params_to_state_dict(params)
             if dist.get_rank() == 0:
@@ -315,9 +318,17 @@ class CMTrainLoop(TrainLoop):
                 self.target_model_master_params = list(self.target_model.parameters())
         if teacher_model:
             self._load_and_sync_teacher_parameters()
-            self.teacher_model.requires_grad_(False)
-            self.teacher_model.eval()
-
+            if self.invert is None:
+                self.teacher_model.requires_grad_(False)
+                self.teacher_model.eval()
+            self.mp_teacher_trainer = MixedPrecisionTrainer(
+                model=self.teacher_model,
+                use_fp16=self.use_fp16,
+                fp16_scale_growth=self.fp16_scale_growth)
+            
+            self.teacher_opt = RAdam(
+                self.mp_trainer.master_params, lr=self.lr, weight_decay=self.weight_decay
+            )
         self.global_step = self.step
         if training_mode == "progdist":
             self.target_model.eval()
@@ -381,6 +392,7 @@ class CMTrainLoop(TrainLoop):
             or self.global_step < self.total_training_steps
         ):
             batch, cond = next(self.data)
+
             self.run_step(batch, cond)
             saved = False
             if (
@@ -405,6 +417,8 @@ class CMTrainLoop(TrainLoop):
     def run_step(self, batch, cond):
         self.forward_backward(batch, cond)
         took_step = self.mp_trainer.optimize(self.opt)
+        if self.teacher_model and self.invert:
+            took_step = self.mp_teacher_trainer.optimize(self.teacher_opt)
         if took_step:
             self._update_ema()
             if self.target_model:
@@ -502,6 +516,7 @@ class CMTrainLoop(TrainLoop):
                     teacher_model=self.teacher_model,
                     teacher_diffusion=self.teacher_diffusion,
                     model_kwargs=micro_cond,
+                    invert = self.invert
                 )
             elif self.training_mode == "consistency_training":
                 compute_losses = functools.partial(
@@ -545,7 +560,6 @@ class CMTrainLoop(TrainLoop):
                     filename = f"model{step:06d}.pt"
                 else:
                     filename = f"ema_{rate}_{step:06d}.pt"
-               
                 with bf.BlobFile(bf.join(self.ckpt_dir, filename), "wb") as f:
                     th.save(state_dict, f)
 

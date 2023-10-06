@@ -1,9 +1,10 @@
 import argparse
 
 from .karras_diffusion import KarrasDenoiser
+from .unet_adapter import UNetModel_inject
 from .unet import UNetModel
 import numpy as np
-
+from omegaconf import OmegaConf
 NUM_CLASSES = 345
 
 def cm_train_defaults():
@@ -46,6 +47,9 @@ def model_and_diffusion_defaults():
         use_new_attention_order=False,
         learn_sigma=False,
         weight_schedule="karras",
+        fineTune_attAdp = False,
+        fineTune_resAdp = False,
+
     )
     return res
 
@@ -71,6 +75,8 @@ def create_model_and_diffusion(
     sigma_min=0.002,
     sigma_max=80.0,
     distillation=False,
+    fineTune_attAdp = False,
+    fineTune_resAdp = False,
 ):
     model = create_model(
         image_size,
@@ -89,6 +95,8 @@ def create_model_and_diffusion(
         resblock_updown=resblock_updown,
         use_fp16=use_fp16,
         use_new_attention_order=use_new_attention_order,
+        fineTune_attAdp = fineTune_attAdp,
+        fineTune_resAdp = fineTune_resAdp
     )
     diffusion = KarrasDenoiser(
         sigma_data=0.5,
@@ -117,6 +125,8 @@ def create_model(
     resblock_updown=False,
     use_fp16=False,
     use_new_attention_order=False,
+    fineTune_attAdp =False,
+    fineTune_resAdp = False,
 ):
     if channel_mult == "":
         if image_size == 512:
@@ -135,8 +145,30 @@ def create_model(
     attention_ds = []
     for res in attention_resolutions.split(","):
         attention_ds.append(image_size // int(res))
-
-    return UNetModel(
+    adapter_dict =  {
+            'resblock_adp_config':{
+                'type':'inout',
+                'din':'resi',
+                'dout':'reso',
+                'method':'relu',
+                'mid_dim': 7,
+                'scale':1.0,
+                'num_adapters':10
+            },
+            'attention_adp_config':{
+                'mid_dim':60,
+                'scale':1,
+                'method':'relu',
+                'num_adapters':10
+            },
+            
+        }
+    if not fineTune_resAdp:
+        adapter_dict['resblock_adp_config'] = None
+    if not fineTune_attAdp:
+        adapter_dict['attention_adp_config'] = None
+    adapter_config = OmegaConf.create(adapter_dict)
+    return UNetModel_inject(
         image_size=image_size,
         in_channels=3,
         model_channels=num_channels,
@@ -154,6 +186,7 @@ def create_model(
         use_scale_shift_norm=use_scale_shift_norm,
         resblock_updown=resblock_updown,
         use_new_attention_order=use_new_attention_order,
+        adapter_config=adapter_config
     )
 
 

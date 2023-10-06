@@ -67,24 +67,24 @@ class EvalInversionDataset(VisionDataset):
         imgs = []
         if self.train:
             data_file = self.training_file
-            angles = [45,90,135,180,225,270,315]
-            color_jitter_values = [0.5,0.75]
-            hue_values = [0.25,0.5]
-            updated_classes = []
+            # angles = [45,90,135,180,225,270,315]
+            # color_jitter_values = [0.5,0.75]
+            # hue_values = [0.25,0.5]
+            # updated_classes = []
             for i, path in enumerate(image_paths):
                 with bf.BlobFile(path, "rb") as f:
                     pil_image = Image.open(f)
                     pil_image.load()
                 pil_image = pil_image.convert("RGB")
-                h_flipped_image = TF.hflip(pil_image)
-                rotated_images = [TF.rotate(pil_image,angle = angle) for angle in angles]
-                color_jitter_imgs = [ColorJitter(brightness=i,saturation=j,contrast=k,hue=z)(pil_image)
-                                    for i in color_jitter_values for j in color_jitter_values for k in color_jitter_values for z in hue_values]
+            #     h_flipped_image = TF.hflip(pil_image)
+            #     rotated_images = [TF.rotate(pil_image,angle = angle) for angle in angles]
+            #     color_jitter_imgs = [ColorJitter(brightness=i,saturation=j,contrast=k,hue=z)(pil_image)
+            #                         for i in color_jitter_values for j in color_jitter_values for k in color_jitter_values for z in hue_values]
                 imgs.append(pil_image)
-                imgs.append(h_flipped_image)
-                imgs.extend(rotated_images)
-                imgs.extend(color_jitter_imgs)
-                updated_classes.extend([classes[i]]*25)
+            #     imgs.append(h_flipped_image)
+            #     imgs.extend(rotated_images)
+            #     imgs.extend(color_jitter_imgs)
+            #     updated_classes.extend([classes[i]]*25)
             # classes = updated_classes
             # data_file = self.training_file
             # updated_classes = []
@@ -95,7 +95,7 @@ class EvalInversionDataset(VisionDataset):
             #     pil_image = pil_image.convert("RGB")
             #     imgs.append(pil_image)
             #     updated_classes.append(classes[i])
-            classes = updated_classes
+            # classes = updated_classes
             #assert len(imgs) == 100
         else:
             data_file = self.test_file
@@ -103,9 +103,10 @@ class EvalInversionDataset(VisionDataset):
         data, targets = torch.load(os.path.join(self.processed_folder, data_file))
 
         if self.train:
-            count_dict = {digit:0 for digit in range(1,10)}
+            count_dict = {digit:0 for digit in range(0,10)}
+            count_dict.pop(classes[0])
         else:
-            count_dict = {digit:0 for digit in range(0,1)}
+            count_dict = {digit:0 for digit in range(classes[0],classes[0]+1)}
             classes = []
 
         index = 0
@@ -113,7 +114,7 @@ class EvalInversionDataset(VisionDataset):
         while count_dict != {}:
             num = targets[index].item()
             if self.train:
-                if num == 0:
+                if num == classes[0]:
                     index+=1
                     continue
             if num not in count_dict:

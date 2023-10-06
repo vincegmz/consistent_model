@@ -72,8 +72,13 @@ class LeNet(nn.Module):
             return a2
         else:
             raise NotImplementedError
-    
-def train_loop(dataloader,model,loss_fn,optimizer,print_interval):
+
+def custom_print(fileName,message):
+    with open(fileName,'a') as file:
+        print(message,file = file)
+    print(message)
+
+def train_loop(dataloader,model,loss_fn,optimizer,print_interval,out_file):
     size = len(dataloader.dataset)
     num_batches = len(dataloader)
     model.train()
@@ -91,10 +96,10 @@ def train_loop(dataloader,model,loss_fn,optimizer,print_interval):
             train_loss+=loss
         if batch % print_interval == 0:
             loss,current = loss.item(),(batch+1)*len(X)
-            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+            custom_print(out_file,f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
     correct/=size
     train_loss/=num_batches
-    print(f"Training Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {train_loss:>8f} \n")        
+    return correct, train_loss  
 def test_loop(dataloader,model,loss_fn):
     model.eval()
     size = len(dataloader.dataset)
@@ -109,21 +114,22 @@ def test_loop(dataloader,model,loss_fn):
             correct+= (pred.argmax(1) ==y).type(torch.float).sum().item()
     test_loss /= num_batches
     correct /= size
-    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+    return correct, test_loss
 
 def create_argparser():
     defaults = dict(
         data_dir="",
         lr=1e-2,
-        batch_size = 4,
-        epochs = 100,
+        batch_size = 64,
+        epochs = 20,
         print_interval = 2,
-        image_size = 32,
+        image_size = 64,
         class_cond = True,
-        ckpt_dir = "/media/minzhe_guo/ckpt/mnist_classifer",
+        log_dir = "/media/minzhe_guo/ckpt/mnist_classifer",
         domain = None,
         resume = False,
         standard_augment = False,
+        class_label = 0
     )
 
     parser = argparse.ArgumentParser()
@@ -137,43 +143,58 @@ if __name__ == "__main__":
         class_cond=args.class_cond,
         train = True,
         domain = args.domain,
-        standard_augment = args.standard_augment
+        standard_augment = args.standard_augment,
+        class_label= args.class_label
     )
     test_dataset = create_dataset(data_dir=args.data_dir,
         image_size=args.image_size,
         class_cond=args.class_cond,
         train = False,
         domain = args.domain,
-        standard_augment=args.standard_augment
+        standard_augment=args.standard_augment,
+        class_label=args.class_label
         
     )
 
     train_loader= DataLoader(
-            train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=1, drop_last=True
+            train_dataset, batch_size=min(args.batch_size,len(train_dataset)), shuffle=False, num_workers=1, drop_last=True
     )
     test_loader= DataLoader(
-            test_dataset, batch_size=args.batch_size, shuffle=True, num_workers=1, drop_last=True
+            test_dataset, batch_size=min(args.batch_size,len(test_dataset)), shuffle=False, num_workers=1, drop_last=True
     )
 
     loss_fn = nn.CrossEntropyLoss()
     model = LeNet(image_size=args.image_size,dataset = args.data_dir.split('/')[-1]).to('cuda')
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
-    if args.resume and os.path.exists(args.ckpt_dir) and os.path.isdir(args.ckpt_dir):
-        target_ckpt = sorted([filename for filename in os.listdir(args.ckpt_dir)],reverse=True)[0]
-        ckpt_dict = torch.load(os.path.join(args.ckpt_dir,target_ckpt))
+    if args.resume and os.path.exists(args.log_dir) and os.path.isdir(args.log_dir):
+        target_ckpt = sorted([filename for filename in os.listdir(args.log_dir)],reverse=True)[0]
+        ckpt_dict = torch.load(os.path.join(args.log_dir,target_ckpt))
         model.load_state_dict(ckpt_dict['model_state_dict'])
         start_epoch = ckpt_dict['epoch']
         optimizer.load_state_dict(ckpt_dict['optimizer_state_dict'])
         print('loading ckpt...')
     else:
         start_epoch = 0 
-    os.makedirs(args.ckpt_dir,exist_ok=True)
+    os.makedirs(args.log_dir,exist_ok=True)
+    best_test_accuracy = 0
+    if 'color_digits' in args.data_dir:
+        type = 'non_diff_augmented'
+    else:
+        type = os.path.basename(args.data_dir)
+    log_file = os.path.join(args.log_dir,f'{type}_{args.class_label}_log.txt')
+    best_epoch = 0
     for t in range(start_epoch,args.epochs):
         print(f"Epoch {t+1}\n-------------------------------")
-        train_loop(train_loader, model, loss_fn, optimizer,print_interval=args.print_interval)
-        test_loop(test_loader, model, loss_fn)
+        correct,train_loss = train_loop(train_loader, model, loss_fn, optimizer,print_interval=args.print_interval,out_file = log_file)
+        custom_print(log_file,f"Training Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {train_loss:>8f} \n")
+        correct,test_loss = test_loop(test_loader, model, loss_fn)
+        if correct > best_test_accuracy:
+            best_test_accuracy = correct
+            best_epoch = t+1
+        custom_print(log_file,f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
         if (t+1)%50 ==0:
             torch.save({'model_state_dict':model.state_dict(),
                         'epoch':t+1,
                         'optimizer_state_dict':optimizer.state_dict()},
-                       os.path.join(args.ckpt_dir,f"model{t+1:03}.pt"))
+                       os.path.join(args.log_dir,f"model{t+1:03}.pt"))
+    custom_print(log_file,f'Best test accuracy is {(best_test_accuracy*100):>0.1f}%, epoch is {best_epoch}')

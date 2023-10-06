@@ -8,6 +8,9 @@ import numpy as np
 from torch.utils.data import DataLoader, Dataset
 
 
+
+
+
 def load_data(
     *,
     data_dir,
@@ -88,14 +91,15 @@ def load_data(
             )
     if deterministic:
         loader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=True
+            dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=True
         )
     else:
         loader = DataLoader(
             dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=True
         )
-    while True:
-        yield from loader
+    return loader
+    # while True:
+    #     yield from loader
 
 def create_dataset(  *,
     data_dir,
@@ -107,7 +111,8 @@ def create_dataset(  *,
     train_classifier = True,
     domain = None,
     transforms = None,
-    standard_augment = False):
+    standard_augment = False,
+    class_label= 0):
     if not data_dir:
         raise ValueError("unspecified data directory")
     dataset_type = data_dir.split('/')[-1]
@@ -191,9 +196,10 @@ def create_dataset(  *,
             train = train,
             train_classifier = train_classifier
         )
-        elif dataset_type == "Augmented_color_zero" or not standard_augment:
+        elif not standard_augment:
             root = '/media/minzhe/ckpt/dataset/mnistm'
             from datasets.eval_inversion import EvalInversionDataset
+            classes = [class_label for _ in range(len(classes))]
             dataset = EvalInversionDataset(root,image_size,
                 all_files,
                 classes=classes,
@@ -205,20 +211,21 @@ def create_dataset(  *,
             )
         else:
             if standard_augment:
-                if dataset_type == 'color_zero':
-                    root = '/media/minzhe/ckpt/dataset/mnistm'
-                    from datasets.standard_augment import StandardAugmentDataset
-                    dataset = StandardAugmentDataset(root,image_size,
-                        all_files,
-                        classes=classes,
-                        shard=MPI.COMM_WORLD.Get_rank(),
-                        num_shards=MPI.COMM_WORLD.Get_size(),
-                        random_crop=random_crop,
-                        random_flip=random_flip,
-                        train=train
-                    )
-                else:
-                    raise NotImplementedError
+                root = '/media/minzhe/ckpt/dataset/mnistm'
+                from datasets.standard_augment import StandardAugmentDataset
+                # if data_dir.split('/')[-2] == 'color_digits':
+                #     dict = {'Zero':0,'One':1,'Two':2,'Three':3,'Four':4,'Five':5,'Six':6,'Seven':7,'Eight':8,'Nine':9}
+                #     classes = [dict[dataset_type] for _ in range(len(classes))]
+                classes = [class_label for _ in range(len(classes))]
+                dataset = StandardAugmentDataset(root,image_size,
+                    all_files,
+                    classes=classes,
+                    shard=MPI.COMM_WORLD.Get_rank(),
+                    num_shards=MPI.COMM_WORLD.Get_size(),
+                    random_crop=random_crop,
+                    random_flip=random_flip,
+                    train=train,
+                )
             else:
                 dataset = ImageDataset(
                 image_size,

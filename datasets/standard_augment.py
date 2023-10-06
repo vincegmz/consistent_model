@@ -81,21 +81,28 @@ class StandardAugmentDataset(VisionDataset):
                 color_jitter_imgs = [ColorJitter(brightness=i,saturation=j,contrast=k,hue=z)(pil_image)
                                     for i in color_jitter_values for j in color_jitter_values for k in color_jitter_values for z in hue_values]
                 imgs.append(pil_image)
-                imgs.append(h_flipped_image)
-                imgs.extend(rotated_images)
-                imgs.extend(color_jitter_imgs)
-                updated_classes.extend([classes[i]]*25)
-            classes = updated_classes
-            assert len(imgs) == 100
+                # imgs.append(h_flipped_image)
+                # imgs.extend(rotated_images)
+                # imgs.extend(color_jitter_imgs)
+                # updated_classes.extend([classes[i]]*25)
+            # classes = updated_classes
+            if len(imgs) !=100:
+                factor = int(100/len(imgs))
+                imgs = imgs*factor
+                updated_classes.extend([classes[i]]*100)
+                classes = updated_classes
+                
+            # assert len(imgs) == 100
         else:
             data_file = self.test_file
 
         data, targets = torch.load(os.path.join(self.processed_folder, data_file))
 
         if self.train:
-            count_dict = {digit:0 for digit in range(1,10)}
+            count_dict = {digit:0 for digit in range(0,10)}
+            count_dict.pop(classes[0])
         else:
-            count_dict = {digit:0 for digit in range(0,1)}
+            count_dict = {digit:0 for digit in range(classes[0],classes[0]+1)}
             classes = []
         # data_file = self.training_file
         # count_dict = {digit:0 for digit in range(1,10)}
@@ -105,7 +112,7 @@ class StandardAugmentDataset(VisionDataset):
         while count_dict != {}:
             num = targets[index].item()
             if self.train:
-                if num == 0:
+                if num == classes[0]:
                     index+=1
                     continue
             if num not in count_dict:
@@ -113,7 +120,6 @@ class StandardAugmentDataset(VisionDataset):
                 continue
             classes.append(num)
             img = Image.fromarray(data[index].squeeze().numpy(), mode="RGB")
-            img.save('')
             imgs.append(img)
             count_dict[num]+=1
             index+=1

@@ -77,7 +77,7 @@ class KarrasDenoiser:
         c_in = 1 / (sigma**2 + self.sigma_data**2) ** 0.5
         return c_skip, c_out, c_in
 
-    def training_losses(self, model, x_start, sigmas, model_kwargs=None, noise=None):
+    def training_losses(self, model, x_start, sigmas, model_kwargs=None, noise=None,diversity_regularize =0,new_scores = {}):
         if model_kwargs is None:
             model_kwargs = {}
         if noise is None:
@@ -88,20 +88,40 @@ class KarrasDenoiser:
         dims = x_start.ndim
         x_t = x_start + noise * append_dims(sigmas, dims)
         model_output, denoised = self.denoise(model, x_t, sigmas, **model_kwargs)
-
+        from piq import brisque
+        # processed_denoised = denoised.clamp(-1,1)
+        # processed_denoised = (processed_denoised+1)*0.5
+        # new_scores[model_kwargs['y'][0].item()]= brisque(processed_denoised, data_range=1., reduction='none').mean().item()
         snrs = self.get_snr(sigmas.float())
         weights = append_dims(
             get_weightings(self.weight_schedule, snrs, self.sigma_data), dims
         )
         terms["xs_mse"] = mean_flat((denoised - x_start) ** 2)
         terms["mse"] = mean_flat(weights * (denoised - x_start) ** 2)
-
+        new_scores[model_kwargs['y'][0].item()]= terms["mse"].mean().item()
         if "vb" in terms:
             terms["loss"] = terms["mse"] + terms["vb"]
         else:
             terms["loss"] = terms["mse"]
-
+        if diversity_regularize:
+            terms['weighted_diversity_loss'] = self.pairwise_similarity_loss(terms['loss'],denoised,diversity_regularize,model_kwargs)
         return terms
+    
+    def pairwise_similarity_loss(self,loss,denoised,diversity_lambda,model_kwargs):
+        diversity_loss = th.tensor([0],dtype = loss.dtype,device = loss.device)
+        for i in range(denoised.shape[0]):
+            for j in range(i+1,denoised.shape[0]):
+                if model_kwargs['y'][i] == model_kwargs['y'][j]:
+                    # distiller = F.interpolate(denoised[i:i+1], size=224, mode="bilinear")
+                    # distiller_target = F.interpolate(
+                    #     denoised[j:j+1], size=224, mode="bilinear"
+                    # )
+                    # diversity_loss+= -diversity_lambda*th.log(
+                    #     self.lpips_loss(
+                    #     (distiller + 1) / 2.0,
+                    #     (distiller_target + 1) / 2.0,))
+                    diversity_loss+= -diversity_lambda*th.log(mean_flat((denoised[i:i+1]-denoised[j:j+1])**2))
+        return diversity_loss
 
     def consistency_losses(
         self,
